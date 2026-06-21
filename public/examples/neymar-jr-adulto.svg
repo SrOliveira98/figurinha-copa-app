@@ -1,0 +1,43 @@
+<svg width="350" height="560" viewBox="0 0 350 560" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="350" height="560" rx="28" fill="url(#skyBg)"/>
+  <text x="18" y="118" fill="#2B993E" fill-opacity="0.68" font-size="96" font-family="Arial Black, Arial, sans-serif">26</text>
+  <text x="18" y="240" fill="#2B993E" fill-opacity="0.68" font-size="96" font-family="Arial Black, Arial, sans-serif">26</text>
+  <g opacity="0.95">
+    <text x="286" y="96" fill="white" font-size="18" font-family="Arial Black, Arial, sans-serif">FIFA</text>
+    <text x="272" y="128" fill="white" font-size="38" font-family="Arial Black, Arial, sans-serif">26</text>
+    <path d="M302 34C312 44 312 58 302 68C292 58 292 44 302 34Z" fill="#C8F3FF"/>
+  </g>
+  <path d="M138 88C154 70 190 64 214 78C228 86 238 100 240 116C242 130 236 144 226 154H146C136 146 132 136 132 122C132 110 132 98 138 88Z" fill="#2A1D16"/>
+  <rect x="136" y="108" width="78" height="150" rx="14" fill="url(#faceBlur)"/>
+  <path d="M90 226C104 198 138 182 176 182C214 182 246 196 260 226V354H90V226Z" fill="#F0C718"/>
+  <path d="M132 196C148 208 204 208 220 196" stroke="#2D8DB8" stroke-width="8" stroke-linecap="round"/>
+  <path d="M104 206C116 196 128 191 142 188" stroke="#2D8DB8" stroke-width="4" opacity="0.45" stroke-linecap="round"/>
+  <circle cx="222" cy="260" r="28" fill="url(#crestGlow)"/>
+  <path d="M222 238L209 248V272C214 277 230 277 235 272V248L222 238Z" fill="#2A87CE" stroke="#F8E86B" stroke-width="3"/>
+  <path d="M209 248H235" stroke="#F8E86B" stroke-width="3"/>
+  <circle cx="276" cy="255" r="34" fill="#059A44" stroke="#E8FFDF" stroke-width="5"/>
+  <polygon points="276,233 297,255 276,277 255,255" fill="#FFD83D"/>
+  <circle cx="276" cy="255" r="11" fill="#0F55A3"/>
+  <text x="307" y="364" transform="rotate(90 307 364)" fill="white" fill-opacity="0.88" font-size="34" font-family="Arial Black, Arial, sans-serif">BRA</text>
+  <rect x="28" y="457" width="242" height="52" rx="26" fill="#6DAAB6"/>
+  <text x="149" y="487" text-anchor="middle" fill="white" font-size="24" font-family="Arial Black, Arial, sans-serif">NEYMAR JR</text>
+  <text x="149" y="507" text-anchor="middle" fill="#EFFCFF" font-size="12" font-family="Arial, sans-serif">5-2-1992 | 1,75m | 68kg</text>
+  <rect x="28" y="516" width="222" height="24" rx="12" fill="#5D96A3"/>
+  <text x="139" y="533" text-anchor="middle" fill="white" font-size="10" font-family="Arial Black, Arial, sans-serif">SANTOS FUTEBOL CLUBE (BRA)</text>
+  <rect x="258" y="516" width="64" height="24" rx="4" fill="#F2D34B"/>
+  <text x="290" y="533" text-anchor="middle" fill="#B22222" font-size="14" font-family="Georgia, serif" font-weight="700">PANINI</text>
+  <defs>
+    <linearGradient id="skyBg" x1="0" y1="0" x2="350" y2="560" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8AE2EC"/>
+      <stop offset="1" stop-color="#5BC1CB"/>
+    </linearGradient>
+    <linearGradient id="faceBlur" x1="136" y1="108" x2="214" y2="258" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8E5A3B"/>
+      <stop offset="1" stop-color="#BF8E6D"/>
+    </linearGradient>
+    <radialGradient id="crestGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(222 260) rotate(90) scale(28)">
+      <stop stop-color="#EAF7FF"/>
+      <stop offset="1" stop-color="#A7D6EB"/>
+    </radialGradient>
+  </defs>
+</svg>
