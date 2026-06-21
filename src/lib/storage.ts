@@ -1,15 +1,18 @@
 import { mkdir, readFile, unlink, writeFile } from "fs/promises";
 import path from "path";
 
+import { del, list, put } from "@vercel/blob";
+
 import { StickerRecord, StickerVariant } from "@/lib/types";
 
 const storageRoot = path.join(process.cwd(), "storage");
 const uploadsDir = path.join(storageRoot, "uploads");
 const generatedDir = path.join(storageRoot, "generated");
 const dbPath = path.join(storageRoot, "figurinha-records.json");
+const TEMP_FILE_TTL_MS = 24 * 60 * 60 * 1000;
+const useBlobStorage = Boolean(process.env.BLOB_READ_WRITE_TOKEN);
 
 type StickerDatabase = Record<string, StickerRecord>;
-const TEMP_FILE_TTL_MS = 24 * 60 * 60 * 1000;
 
 function normalizeRecord(record: StickerRecord): StickerRecord {
   return {
@@ -19,7 +22,108 @@ function normalizeRecord(record: StickerRecord): StickerRecord {
   };
 }
 
-async function ensureStorage() {
+function getRecordBlobPath(id: string) {
+  return `records/${id}.json`;
+}
+
+function getUploadBlobPath(id: string, fileExtension: string) {
+  return `uploads/${id}${fileExtension}`;
+}
+
+function getGeneratedBlobPath(id: string, variant: StickerVariant) {
+  return `generated/${id}-${variant}.png`;
+}
+
+async function fetchBufferFromUrl(url: string) {
+  const response = await fetch(url, { cache: "no-store" });
+
+  if (!response.ok) {
+    throw new Error(`Falha ao baixar blob ${url}.`);
+  }
+
+  return Buffer.from(await response.arrayBuffer());
+}
+
+async function fetchJsonFromUrl<T>(url: string) {
+  const response = await fetch(url, { cache: "no-store" });
+
+  if (!response.ok) {
+    throw new Error(`Falha ao ler registro ${url}.`);
+  }
+
+  return (await response.json()) as T;
+}
+
+async function findBlobByPath(pathname: string) {
+  const { blobs } = await list({
+    prefix: pathname,
+    limit: 10,
+  });
+
+  return blobs.find((blob) => blob.pathname === pathname) ?? null;
+}
+
+async function putBlob(pathname: string, body: Buffer | string, contentType: string) {
+  return put(pathname, body, {
+    access: "public",
+    allowOverwrite: true,
+    addRandomSuffix: false,
+    contentType,
+  });
+}
+
+async function cleanupExpiredBlobRecords(records: StickerRecord[]) {
+  const now = Date.now();
+
+  for (const record of records) {
+    const createdAt = new Date(record.createdAt).getTime();
+
+    if (Number.isNaN(createdAt) || now - createdAt < TEMP_FILE_TTL_MS) {
+      continue;
+    }
+
+    await Promise.all([
+      del(record.photoFileName).catch(() => undefined),
+      del(record.previewFileName).catch(() => undefined),
+      del(record.cleanFileName).catch(() => undefined),
+      del(getRecordBlobPath(record.id)).catch(() => undefined),
+    ]);
+  }
+}
+
+async function listAllBlobRecords() {
+  const { blobs } = await list({
+    prefix: "records/",
+    limit: 1000,
+  });
+
+  const records = await Promise.all(
+    blobs.map(async (blob) => normalizeRecord(await fetchJsonFromUrl<StickerRecord>(blob.url))),
+  );
+
+  await cleanupExpiredBlobRecords(records);
+
+  return records.filter((record) => {
+    const createdAt = new Date(record.createdAt).getTime();
+    return !Number.isNaN(createdAt) && Date.now() - createdAt < TEMP_FILE_TTL_MS;
+  });
+}
+
+async function getBlobRecord(id: string) {
+  const blob = await findBlobByPath(getRecordBlobPath(id));
+
+  if (!blob) {
+    return null;
+  }
+
+  return normalizeRecord(await fetchJsonFromUrl<StickerRecord>(blob.url));
+}
+
+async function writeBlobRecord(record: StickerRecord) {
+  await putBlob(getRecordBlobPath(record.id), JSON.stringify(record, null, 2), "application/json");
+}
+
+async function ensureLocalStorage() {
   await mkdir(uploadsDir, { recursive: true });
   await mkdir(generatedDir, { recursive: true });
 
@@ -30,20 +134,20 @@ async function ensureStorage() {
   }
 }
 
-async function readDatabase() {
-  await ensureStorage();
+async function readLocalDatabase() {
+  await ensureLocalStorage();
   const raw = await readFile(dbPath, "utf8");
   const database = JSON.parse(raw) as StickerDatabase;
-  await cleanupExpiredRecords(database);
+  await cleanupExpiredLocalRecords(database);
   return database;
 }
 
-async function writeDatabase(database: StickerDatabase) {
-  await ensureStorage();
+async function writeLocalDatabase(database: StickerDatabase) {
+  await ensureLocalStorage();
   await writeFile(dbPath, JSON.stringify(database, null, 2), "utf8");
 }
 
-async function removeFileIfExists(filePath: string) {
+async function removeLocalFileIfExists(filePath: string) {
   try {
     await unlink(filePath);
   } catch {
@@ -51,18 +155,14 @@ async function removeFileIfExists(filePath: string) {
   }
 }
 
-async function cleanupExpiredRecords(database: StickerDatabase) {
+async function cleanupExpiredLocalRecords(database: StickerDatabase) {
   const now = Date.now();
   let changed = false;
 
   for (const [id, record] of Object.entries(database)) {
     const createdAt = new Date(record.createdAt).getTime();
 
-    if (Number.isNaN(createdAt)) {
-      continue;
-    }
-
-    if (now - createdAt < TEMP_FILE_TTL_MS) {
+    if (Number.isNaN(createdAt) || now - createdAt < TEMP_FILE_TTL_MS) {
       continue;
     }
 
@@ -70,30 +170,75 @@ async function cleanupExpiredRecords(database: StickerDatabase) {
     delete database[id];
 
     await Promise.all([
-      removeFileIfExists(path.join(uploadsDir, record.photoFileName)),
-      removeFileIfExists(path.join(generatedDir, record.previewFileName)),
-      removeFileIfExists(path.join(generatedDir, record.cleanFileName)),
+      removeLocalFileIfExists(path.join(uploadsDir, record.photoFileName)),
+      removeLocalFileIfExists(path.join(generatedDir, record.previewFileName)),
+      removeLocalFileIfExists(path.join(generatedDir, record.cleanFileName)),
     ]);
   }
 
   if (changed) {
-    await writeDatabase(database);
+    await writeLocalDatabase(database);
   }
 }
 
+async function updateLocalRecord(
+  id: string,
+  updater: (record: StickerRecord) => StickerRecord,
+) {
+  const database = await readLocalDatabase();
+  const currentRecord = database[id];
+
+  if (!currentRecord) {
+    return null;
+  }
+
+  const updatedRecord = normalizeRecord(updater(currentRecord));
+  database[id] = updatedRecord;
+  await writeLocalDatabase(database);
+  return updatedRecord;
+}
+
+async function updateBlobRecord(
+  id: string,
+  updater: (record: StickerRecord) => StickerRecord,
+) {
+  const currentRecord = await getBlobRecord(id);
+
+  if (!currentRecord) {
+    return null;
+  }
+
+  const updatedRecord = normalizeRecord(updater(currentRecord));
+  await writeBlobRecord(updatedRecord);
+  return updatedRecord;
+}
+
 export async function saveUploadFile(id: string, fileExtension: string, fileBuffer: Buffer) {
-  await ensureStorage();
+  if (useBlobStorage) {
+    const blob = await putBlob(getUploadBlobPath(id, fileExtension), fileBuffer, "application/octet-stream");
+    return blob.url;
+  }
+
+  await ensureLocalStorage();
   const fileName = `${id}${fileExtension}`;
   await writeFile(path.join(uploadsDir, fileName), fileBuffer);
   return fileName;
 }
 
-export async function saveGeneratedImages(
-  id: string,
-  images: { preview: Buffer; clean: Buffer },
-) {
-  await ensureStorage();
+export async function saveGeneratedImages(id: string, images: { preview: Buffer; clean: Buffer }) {
+  if (useBlobStorage) {
+    const [previewBlob, cleanBlob] = await Promise.all([
+      putBlob(getGeneratedBlobPath(id, "preview"), images.preview, "image/png"),
+      putBlob(getGeneratedBlobPath(id, "clean"), images.clean, "image/png"),
+    ]);
 
+    return {
+      previewFileName: previewBlob.url,
+      cleanFileName: cleanBlob.url,
+    };
+  }
+
+  await ensureLocalStorage();
   const previewFileName = `${id}-preview.png`;
   const cleanFileName = `${id}-clean.png`;
 
@@ -104,26 +249,45 @@ export async function saveGeneratedImages(
 }
 
 export async function overwriteCleanImage(id: string, cleanImageBuffer: Buffer) {
-  await ensureStorage();
+  if (useBlobStorage) {
+    const blob = await putBlob(getGeneratedBlobPath(id, "clean"), cleanImageBuffer, "image/png");
+    return blob.url;
+  }
+
+  await ensureLocalStorage();
   const cleanFileName = `${id}-clean.png`;
   await writeFile(path.join(generatedDir, cleanFileName), cleanImageBuffer);
   return cleanFileName;
 }
 
 export async function saveStickerRecord(record: StickerRecord) {
-  const database = await readDatabase();
-  database[record.id] = record;
-  await writeDatabase(database);
+  if (useBlobStorage) {
+    await writeBlobRecord(normalizeRecord(record));
+    return;
+  }
+
+  const database = await readLocalDatabase();
+  database[record.id] = normalizeRecord(record);
+  await writeLocalDatabase(database);
 }
 
 export async function getStickerRecord(id: string) {
-  const database = await readDatabase();
+  if (useBlobStorage) {
+    return getBlobRecord(id);
+  }
+
+  const database = await readLocalDatabase();
   const record = database[id];
   return record ? normalizeRecord(record) : null;
 }
 
 export async function getStickerBySessionId(sessionId: string) {
-  const database = await readDatabase();
+  if (useBlobStorage) {
+    const records = await listAllBlobRecords();
+    return records.find((record) => record.stripeSessionId === sessionId) ?? null;
+  }
+
+  const database = await readLocalDatabase();
   return (
     Object.values(database)
       .map(normalizeRecord)
@@ -135,24 +299,15 @@ export async function markStickerAsPaid(
   id: string,
   payload: { stripeSessionId?: string; stripePaymentStatus?: string } = {},
 ) {
-  const database = await readDatabase();
-  const currentRecord = database[id];
+  const updateRecord = useBlobStorage ? updateBlobRecord : updateLocalRecord;
 
-  if (!currentRecord) {
-    return null;
-  }
-
-  const updatedRecord: StickerRecord = {
+  return updateRecord(id, (currentRecord) => ({
     ...currentRecord,
     paid: true,
     stripeSessionId: payload.stripeSessionId ?? currentRecord.stripeSessionId,
     stripePaymentStatus:
       payload.stripePaymentStatus ?? currentRecord.stripePaymentStatus ?? "paid",
-  };
-
-  database[id] = updatedRecord;
-  await writeDatabase(database);
-  return updatedRecord;
+  }));
 }
 
 export async function updatePremiumStatus(
@@ -163,50 +318,41 @@ export async function updatePremiumStatus(
     cleanFileName?: string;
   },
 ) {
-  const database = await readDatabase();
-  const currentRecord = database[id];
+  const updateRecord = useBlobStorage ? updateBlobRecord : updateLocalRecord;
 
-  if (!currentRecord) {
-    return null;
-  }
-
-  const updatedRecord: StickerRecord = {
+  return updateRecord(id, (currentRecord) => ({
     ...currentRecord,
     premiumStatus: payload.premiumStatus,
     premiumError: payload.premiumError,
     cleanFileName: payload.cleanFileName ?? currentRecord.cleanFileName,
-  };
-
-  database[id] = updatedRecord;
-  await writeDatabase(database);
-  return updatedRecord;
+  }));
 }
 
 export async function updateStripeSession(id: string, sessionId: string, paymentStatus = "unpaid") {
-  const database = await readDatabase();
-  const currentRecord = database[id];
+  const updateRecord = useBlobStorage ? updateBlobRecord : updateLocalRecord;
 
-  if (!currentRecord) {
-    return null;
-  }
-
-  database[id] = {
+  return updateRecord(id, (currentRecord) => ({
     ...currentRecord,
     stripeSessionId: sessionId,
     stripePaymentStatus: paymentStatus,
-  };
-
-  await writeDatabase(database);
-  return database[id];
+  }));
 }
 
 export async function readStickerImageFile(fileName: string) {
-  await ensureStorage();
+  if (useBlobStorage) {
+    return fetchBufferFromUrl(fileName);
+  }
+
+  await ensureLocalStorage();
   return readFile(path.join(generatedDir, fileName));
 }
 
 export async function readUploadFile(fileName: string) {
-  await ensureStorage();
+  if (useBlobStorage) {
+    return fetchBufferFromUrl(fileName);
+  }
+
+  await ensureLocalStorage();
   return readFile(path.join(uploadsDir, fileName));
 }
 

@@ -43,6 +43,7 @@ http://localhost:3000
 - `OPENAI_API_KEY`
 - `OPENAI_IMAGE_MODEL`
 - `OPENAI_IMAGE_QUALITY`
+- `BLOB_READ_WRITE_TOKEN`
 - `NEXT_PUBLIC_SITE_URL`
 - `SITE_URL`
 - `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`
@@ -63,7 +64,8 @@ http://localhost:3000
 - Se `OPENAI_API_KEY` estiver configurada, a rota de geracao tenta criar a figurinha com OpenAI usando a imagem enviada e uma imagem de referencia local.
 - `OPENAI_IMAGE_QUALITY=medium` costuma ficar mais rapido que `high`, com boa qualidade visual.
 - Se `OPENAI_API_KEY` nao estiver configurada, a aplicacao usa a geracao programatica local com `sharp`.
-- Os arquivos sao guardados temporariamente em `storage/` e limpos automaticamente apos 24h.
+- Em desenvolvimento local, os arquivos ficam em `storage/`.
+- Na Vercel, uploads, previews, imagem final e registros passam a ser gravados no Vercel Blob quando `BLOB_READ_WRITE_TOKEN` estiver configurado.
 - A versao sem marca d'agua so e servida depois da confirmacao de pagamento.
 
 ## Stripe em producao
